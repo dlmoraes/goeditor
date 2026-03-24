@@ -1,0 +1,67 @@
+# ---- Go Build ----
+# Arquivos e diretórios gerados por builds
+/bin/
+/build/
+/out/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Cache do Go
+/pkg/
+**/*.test
+
+# Módulos e dependências
+# (normalmente você mantém go.mod e go.sum)
+vendor/
+
+# ---- IDEs / Editores ----
+# VS Code
+.vscode/
+*.code-workspace
+
+# GoLand / IntelliJ
+.idea/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+
+# ---- OS Files ----
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ---- Logs ----
+*.log
+
+# ---- Env / Config ----
+.env
+.env.dev
+
+backend/cmd/temp
+backend/cmd/temp_files
+
+*.xlsx
+
+keys_cobranca
+db
