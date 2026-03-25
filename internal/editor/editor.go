@@ -93,8 +93,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.ClearScreen
 
 	case tea.KeyMsg:
+		// ── Bracketed paste (Protegido contra NUL bytes) ──
 		if msg.Paste {
 			text := strings.ReplaceAll(string(msg.Runes), "\r", "")
+			text = strings.ReplaceAll(text, "\x00", "") // FILTRO ANTI-NUL
+
 			switch m.currentMode {
 			case modeSearch:
 				m.searchQuery += strings.ReplaceAll(text, "\n", "")
@@ -141,7 +144,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEsc, tea.KeyCtrlC:
 				m.cancelAutocomplete()
 				return m, nil
-			case tea.KeyTab, tea.KeyDown, tea.KeyCtrlL: // Tab agora cicla as opções!
+			case tea.KeyTab, tea.KeyDown, tea.KeyCtrlL:
 				m.acIndex = (m.acIndex + 1) % len(m.acSuggestions)
 				m.applyAutocomplete()
 				return m, nil
@@ -180,7 +183,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.commandInput += " "
 			case tea.KeyRunes:
 				if !msg.Alt {
-					m.commandInput += string(msg.Runes)
+					cleanStr := strings.ReplaceAll(string(msg.Runes), "\x00", "")
+					m.commandInput += cleanStr
 				}
 			}
 			return m, nil
@@ -201,7 +205,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchQuery += " "
 			case tea.KeyRunes:
 				if !msg.Alt {
-					m.searchQuery += string(msg.Runes)
+					cleanStr := strings.ReplaceAll(string(msg.Runes), "\x00", "")
+					m.searchQuery += cleanStr
 				}
 			}
 			return m, nil
@@ -236,10 +241,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case tea.KeyRunes:
 				if !msg.Alt {
+					cleanStr := strings.ReplaceAll(string(msg.Runes), "\x00", "")
 					if m.replaceField == 0 {
-						m.searchQuery += string(msg.Runes)
+						m.searchQuery += cleanStr
 					} else {
-						m.replaceQuery += string(msg.Runes)
+						m.replaceQuery += cleanStr
 					}
 				}
 			}
@@ -272,8 +278,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = ""
 		switch msg.Type {
 
-		// GATILHO ALTERNATIVO DO AUTOCOMPLETAR
-		case tea.KeyCtrlL:
+		case tea.KeyCtrlAt:
 			m.startAutocomplete()
 			return m, nil
 
@@ -452,18 +457,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.adjustCamera()
 			}
 
-		// A MÁGICA DO SMART TAB
 		case tea.KeyTab:
 			m.buf.ClearSelection()
 			line := m.buf.Lines[m.buf.CursorY]
 			col := m.buf.CursorX
 			r := []rune(line)
 
-			// Se o cursor estiver imediatamente após uma letra, aciona o Autocompletar
 			if col > 0 && col <= len(r) && isWordChar(r[col-1]) {
 				m.startAutocomplete()
 			} else {
-				// Caso contrário, age como um Tab normal inserindo espaços
 				m.buf.InsertString("    ")
 				m.adjustCamera()
 			}
@@ -495,10 +497,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// FILTRO DE SEGURANÇA MÁXIMA PARA O TEXTO INSERIDO
+			cleanStr := strings.ReplaceAll(string(msg.Runes), "\x00", "")
+			if cleanStr == "" {
+				return m, nil
+			}
+
 			if m.buf.HasSelection() {
 				m.buf.DeleteSelectedText()
 			}
-			m.buf.InsertString(string(msg.Runes))
+			m.buf.InsertString(cleanStr)
 			m.adjustCamera()
 		}
 	}
