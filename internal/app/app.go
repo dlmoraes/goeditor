@@ -18,14 +18,16 @@ type focus int
 const (
 	focusEditor focus = iota
 	focusTree
-	focusFinder // NOVO ESTADO DE FOCO
+	focusFinder
+	focusConfirmQuitAll
+	focusHelp // ── NOVO: ESTADO DA TELA DE AJUDA ──
 )
 
 type Model struct {
 	editors     []editor.Model
 	activeIndex int
 	tree        filetree.Model
-	find        finder.Model // A NOSSA MÁQUINA DE BUSCA
+	find        finder.Model
 	width       int
 	height      int
 	showTree    bool
@@ -41,7 +43,7 @@ func New(buf *buffer.Buffer) Model {
 		editors:     []editor.Model{editor.New(buf)},
 		activeIndex: 0,
 		tree:        t,
-		find:        finder.New(), // Inicializa o Finder
+		find:        finder.New(),
 		showTree:    true,
 		treeWidth:   30,
 		active:      focusEditor,
@@ -50,6 +52,22 @@ func New(buf *buffer.Buffer) Model {
 
 func (m Model) Init() tea.Cmd {
 	return m.editors[m.activeIndex].Init()
+}
+
+func (m *Model) handleQuitAllRequest() (tea.Model, tea.Cmd) {
+	hasModified := false
+	for _, ed := range m.editors {
+		if ed.IsModified() {
+			hasModified = true
+			break
+		}
+	}
+
+	if hasModified {
+		m.active = focusConfirmQuitAll
+		return m, nil
+	}
+	return m, tea.Quit
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -78,7 +96,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tree = treeModel.(filetree.Model)
 		cmds = append(cmds, cmdTree)
 
-		// Atualiza o tamanho do Finder
 		findModel, cmdFind := m.find.Update(msg)
 		m.find = findModel.(finder.Model)
 		cmds = append(cmds, cmdFind)
@@ -98,6 +115,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case editor.QuitAllMsg:
+		return m.handleQuitAllRequest()
+	case editor.ForceQuitAllMsg:
+		return m, tea.Quit
+
 	case filetree.FileSelectedMsg:
 		for i, ed := range m.editors {
 			if ed.GetFilename() == msg.Path {
@@ -111,34 +133,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newBuf, err := buffer.New(msg.Path)
 		if err == nil {
 			newEditor := editor.New(newBuf)
-
 			editorWidth := m.width
 			if m.showTree {
 				editorWidth = m.width - m.treeWidth - 1
 			}
 			edModel, _ := newEditor.Update(tea.WindowSizeMsg{Width: editorWidth, Height: m.height - 1})
-
 			m.editors = append(m.editors, edModel.(editor.Model))
 			m.activeIndex = len(m.editors) - 1
-
 			m.active = focusEditor
 			m.tree.Active = false
 		}
 		return m, nil
 
-	// ── QUANDO O FINDER ENCONTRA E MANDA ABRIR O FICHEIRO ──
 	case finder.OpenResultMsg:
-		// Verifica se já está aberto
 		for i, ed := range m.editors {
 			if ed.GetFilename() == msg.Path {
 				m.activeIndex = i
 				m.active = focusEditor
-				m.editors[m.activeIndex].JumpToLine(msg.Line) // Salta para a linha!
+				m.editors[m.activeIndex].JumpToLine(msg.Line)
 				return m, nil
 			}
 		}
-
-		// Se não estiver aberto, cria a aba, foca e salta para a linha
 		newBuf, err := buffer.New(msg.Path)
 		if err == nil {
 			newEditor := editor.New(newBuf)
@@ -147,23 +162,63 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				editorWidth = m.width - m.treeWidth - 1
 			}
 			edModel, _ := newEditor.Update(tea.WindowSizeMsg{Width: editorWidth, Height: m.height - 1})
-
 			m.editors = append(m.editors, edModel.(editor.Model))
 			m.activeIndex = len(m.editors) - 1
 			m.active = focusEditor
-			m.editors[m.activeIndex].JumpToLine(msg.Line) // Salta para a linha!
+			m.editors[m.activeIndex].JumpToLine(msg.Line)
 		}
 		return m, nil
 
 	case tea.KeyMsg:
-		// Se o Finder estiver ativo e apertarem ESC, fechamos ele
+
+		// ── LÓGICA DA TELA DE AJUDA ──
+		if m.active == focusHelp {
+			switch msg.Type {
+			case tea.KeyEsc, tea.KeyEnter, tea.KeySpace: // Qualquer tecla comum fecha a ajuda
+				m.active = focusEditor
+				return m, nil
+			case tea.KeyRunes:
+				if msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == 'h' {
+					m.active = focusEditor // Alt+H atua como interruptor (Liga/Desliga)
+					return m, nil
+				}
+			}
+			return m, nil // Bloqueia outros comandos enquanto lê a ajuda
+		}
+
+		// ATALHO PARA ABRIR A AJUDA (Alt + H)
+		if msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == 'h' {
+			m.active = focusHelp
+			return m, nil
+		}
+
+		if m.active == focusConfirmQuitAll {
+			switch strings.ToLower(msg.String()) {
+			case "s", "y":
+				for i := range m.editors {
+					if m.editors[i].IsModified() {
+						_ = m.editors[i].Save()
+					}
+				}
+				return m, tea.Quit
+			case "n":
+				return m, tea.Quit
+			default:
+				m.active = focusEditor
+			}
+			return m, nil
+		}
+
+		if msg.Type == tea.KeyCtrlQ {
+			return m.handleQuitAllRequest()
+		}
+
 		if m.active == focusFinder && (msg.Type == tea.KeyEsc || msg.Type == tea.KeyCtrlC) {
 			m.active = focusEditor
 			m.find.Active = false
 			return m, nil
 		}
 
-		// ATALHO PARA A BUSCA GLOBAL (Alt + F)
 		if msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == 'f' {
 			m.active = focusFinder
 			m.find.Active = true
@@ -171,13 +226,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// ROTEAMENTO DE EVENTOS
 		if m.active == focusFinder {
 			findModel, findCmd := m.find.Update(msg)
 			m.find = findModel.(finder.Model)
 			cmds = append(cmds, findCmd)
-
-			// Se o update do Finder disse que ele não está mais ativo, devolve o foco pro Editor
 			if !m.find.Active {
 				m.active = focusEditor
 			}
@@ -202,15 +254,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.Type == tea.KeyCtrlW {
-			if len(m.editors) > 1 {
-				m.editors = append(m.editors[:m.activeIndex], m.editors[m.activeIndex+1:]...)
-				if m.activeIndex >= len(m.editors) {
-					m.activeIndex = len(m.editors) - 1
-				}
-			} else {
-				return m, tea.Quit
-			}
-			return m, nil
+			return m, func() tea.Msg { return editor.CloseTabMsg{} }
 		}
 
 		if msg.Type == tea.KeyCtrlE {
@@ -265,7 +309,58 @@ func (m Model) View() string {
 		return ""
 	}
 
-	// Se o Finder está ativo, ele rouba a tela inteira (Modo Tela Cheia)
+	// ── DESENHO DA TELA DE AJUDA MODAL ──
+	if m.active == focusHelp {
+		helpText := `
+  🚀 GoEdit - Central de Atalhos e Comandos
+
+  [ NAVEGAÇÃO & GERAL ]
+  Alt + H       : Mostrar/Ocultar esta tela de Ajuda
+  Ctrl + E      : Mostrar/Ocultar Gaveta de Arquivos
+  Ctrl + B      : Focar na Gaveta / Focar no Editor
+  Alt + ⬅ / ➡   : Navegar entre Abas abertas
+  Ctrl + W      : Fechar Aba atual
+  Ctrl + Q      : Fechar GoEdit (Verifica salvamentos)
+
+  [ EDIÇÃO DE CÓDIGO ]
+  Ctrl + S      : Salvar arquivo
+  Ctrl + C / X  : Copiar / Cortar (Integra com Windows)
+  Ctrl + V      : Colar do sistema
+  Ctrl + A      : Selecionar todo o arquivo
+  Ctrl + D      : Duplicar Linha atual (ou Bloco selecionado)
+  Ctrl + K      : Excluir Linha atual
+  Alt + ⬆ / ⬇   : Mover Linha atual para cima/baixo
+  Alt + I       : Modo Colagem Segura (Filtro Anti-Escada)
+  Ctrl + _ (/)  : Comentar / Descomentar linha
+
+  [ BUSCA & PALETA ]
+  Ctrl + F      : Buscar no arquivo atual (Local)
+  Ctrl + R      : Localizar e Substituir (Replace)
+  Alt + F       : Busca Global (Grep em todo o projeto)
+  Ctrl + P      : Paleta de Comandos (:w, :q, :qa, :clear)
+  Tab           : Autocompletar Palavras Inteligente
+`
+		helpBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("42")). // Verde bonitão
+			Padding(1, 4).
+			Align(lipgloss.Left).
+			Render(helpText + "\n   ( Pressione ESC, Enter ou Alt+H para voltar )")
+
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, helpBox)
+	}
+
+	if m.active == focusConfirmQuitAll {
+		dialogBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("196")).
+			Padding(1, 4).
+			Align(lipgloss.Center).
+			Render("⚠️ Existem ficheiros com alterações não salvas!\n\nDeseja salvar tudo antes de encerrar o editor?\n\n[S] Salvar Tudo e Sair  |  [N] Sair Sem Salvar  |  [Esc] Cancelar")
+
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialogBox)
+	}
+
 	if m.active == focusFinder {
 		return m.find.View()
 	}

@@ -23,15 +23,25 @@ func (m *Model) executeCommand() tea.Cmd {
 			m.setStatus("Erro ao guardar: "+err.Error(), 2)
 			return nil
 		}
-		return func() tea.Msg { return CloseTabMsg{} }
+		return func() tea.Msg { return CloseTabMsg{} } // Fecha a aba
 	case "q":
 		if m.buf.Modified {
 			m.setStatus("E37: Ficheiro não guardado (use :q! para forçar o fecho)", 2)
 			return nil
 		}
-		return func() tea.Msg { return CloseTabMsg{} }
+		return func() tea.Msg { return CloseTabMsg{} } // Fecha a aba
 	case "q!":
-		return func() tea.Msg { return CloseTabMsg{} }
+		return func() tea.Msg { return CloseTabMsg{} } // Força fechar aba
+
+	// ── NOVOS COMANDOS DE QUIT ALL (Fechar Aplicação) ──
+	case "qa":
+		return func() tea.Msg { return QuitAllMsg{} }
+	case "qa!":
+		return func() tea.Msg { return ForceQuitAllMsg{} }
+	case "wqa":
+		_ = m.buf.Save()
+		return func() tea.Msg { return QuitAllMsg{} }
+
 	case "clear":
 		m.buf.Lines = []string{""}
 		m.buf.CursorX = 0
@@ -40,7 +50,7 @@ func (m *Model) executeCommand() tea.Cmd {
 		m.adjustCamera()
 		m.setStatus("Ficheiro limpo com sucesso.", 1)
 		return nil
-	case "paste": // COMANDO PARA O MODO COLAGEM
+	case "paste":
 		m.autoIndent = !m.autoIndent
 		if m.autoIndent {
 			m.setStatus("Auto-Indentação ATIVADA.", 1)

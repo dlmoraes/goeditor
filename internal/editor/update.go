@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/atotto/clipboard"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -222,12 +222,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setStatus(fmt.Sprintf("Cortados %d chars para a área de transferência.", len([]rune(m.clipboard))), 1)
 				m.adjustCamera()
 			} else {
-				m.buf.ClearSelection()
-				if m.buf.Modified {
-					m.currentMode = modeConfirmQuit
-				} else {
-					return m, tea.Quit
-				}
+				// VS CODE STYLE: Corta a linha atual inteira se não houver seleção!
+				text := m.buf.Lines[m.buf.CursorY] + "\n"
+				m.clipboard = text
+				_ = clipboard.WriteAll(m.clipboard)
+				m.buf.DeleteCurrentLine()
+				m.setStatus("Linha cortada.", 1)
+				m.adjustCamera()
 			}
 
 		case tea.KeyEsc:
@@ -240,11 +241,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setStatus(fmt.Sprintf("Copiados %d chars para a área de transferência.", len([]rune(m.clipboard))), 1)
 				m.buf.ClearSelection()
 			} else {
-				if m.buf.Modified {
-					m.currentMode = modeConfirmQuit
-				} else {
-					return m, tea.Quit
-				}
+				// VS CODE STYLE: Copia a linha atual inteira se não houver seleção!
+				text := m.buf.Lines[m.buf.CursorY] + "\n"
+				m.clipboard = text
+				_ = clipboard.WriteAll(m.clipboard)
+				m.setStatus("Linha copiada.", 1)
 			}
 
 		case tea.KeyCtrlS:

@@ -99,3 +99,12 @@ func (m *Model) JumpToLine(line int) {
 	m.buf.CursorX = 0
 	m.centerCamera(line)
 }
+
+// ── NOVAS MENSAGENS GLOBAIS DE ENCERRAMENTO ──
+type QuitAllMsg struct{}
+type ForceQuitAllMsg struct{}
+
+// Expor o método Save para o App conseguir "Salvar Tudo"
+func (m *Model) Save() error {
+	return m.buf.Save()
+}
