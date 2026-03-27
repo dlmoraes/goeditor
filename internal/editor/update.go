@@ -94,7 +94,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// ── CORREÇÃO DO ALTGR NOS CAMPOS DE INPUT ──
 		if m.currentMode == modeCommand {
 			switch msg.Type {
 			case tea.KeyEsc, tea.KeyCtrlC:
@@ -112,7 +111,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeySpace:
 				m.commandInput += " "
 			case tea.KeyRunes:
-				// Removida a barreira do "if !msg.Alt". Agora o comando aceita barras (/)!
 				cleanStr := strings.ReplaceAll(string(msg.Runes), "\x00", "")
 				m.commandInput += cleanStr
 			}
@@ -222,7 +220,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setStatus(fmt.Sprintf("Cortados %d chars para a área de transferência.", len([]rune(m.clipboard))), 1)
 				m.adjustCamera()
 			} else {
-				// VS CODE STYLE: Corta a linha atual inteira se não houver seleção!
 				text := m.buf.Lines[m.buf.CursorY] + "\n"
 				m.clipboard = text
 				_ = clipboard.WriteAll(m.clipboard)
@@ -241,7 +238,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setStatus(fmt.Sprintf("Copiados %d chars para a área de transferência.", len([]rune(m.clipboard))), 1)
 				m.buf.ClearSelection()
 			} else {
-				// VS CODE STYLE: Copia a linha atual inteira se não houver seleção!
 				text := m.buf.Lines[m.buf.CursorY] + "\n"
 				m.clipboard = text
 				_ = clipboard.WriteAll(m.clipboard)
@@ -422,18 +418,74 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.adjustCamera()
 			}
 
+		// ── INDENTAÇÃO (DIREITA) ──
 		case tea.KeyTab:
-			m.buf.ClearSelection()
-			line := m.buf.Lines[m.buf.CursorY]
-			col := m.buf.CursorX
-			r := []rune(line)
-
-			if col > 0 && col <= len(r) && isWordChar(r[col-1]) {
-				m.startAutocomplete()
-			} else {
-				m.buf.InsertString("    ")
+			if m.buf.HasSelection() {
+				sy, _, ey, _ := m.buf.SelBounds()
+				for i := sy; i <= ey; i++ {
+					m.buf.Lines[i] = "    " + m.buf.Lines[i]
+				}
+				m.buf.Modified = true
+				m.buf.CursorX += 4
 				m.adjustCamera()
+				m.setStatus(fmt.Sprintf("Bloco de %d linhas indentado (Dir).", ey-sy+1), 1)
+			} else {
+				m.buf.ClearSelection()
+				line := m.buf.Lines[m.buf.CursorY]
+				col := m.buf.CursorX
+				r := []rune(line)
+
+				if col > 0 && col <= len(r) && isWordChar(r[col-1]) {
+					m.startAutocomplete()
+				} else {
+					m.buf.InsertString("    ")
+					m.adjustCamera()
+				}
 			}
+
+		// ── DESINDENTAÇÃO (ESQUERDA) ──
+		case tea.KeyShiftTab:
+			sy, ey := m.buf.CursorY, m.buf.CursorY
+			if m.buf.HasSelection() {
+				sy, _, ey, _ = m.buf.SelBounds()
+			}
+
+			linhasAlteradas := 0
+			for i := sy; i <= ey; i++ {
+				// Remove 4 espaços ou 1 tab nativo
+				if strings.HasPrefix(m.buf.Lines[i], "    ") {
+					m.buf.Lines[i] = strings.TrimPrefix(m.buf.Lines[i], "    ")
+					linhasAlteradas++
+				} else if strings.HasPrefix(m.buf.Lines[i], "\t") {
+					m.buf.Lines[i] = strings.TrimPrefix(m.buf.Lines[i], "\t")
+					linhasAlteradas++
+				} else {
+					// Caso haja de 1 a 3 espaços perdidos
+					spacesToRemove := 0
+					for _, ch := range m.buf.Lines[i] {
+						if ch == ' ' && spacesToRemove < 4 {
+							spacesToRemove++
+						} else {
+							break
+						}
+					}
+					m.buf.Lines[i] = m.buf.Lines[i][spacesToRemove:]
+					if spacesToRemove > 0 {
+						linhasAlteradas++
+					}
+				}
+			}
+
+			if linhasAlteradas > 0 {
+				m.buf.Modified = true
+				if m.buf.CursorX >= 4 {
+					m.buf.CursorX -= 4
+				} else {
+					m.buf.CursorX = 0
+				}
+				m.setStatus(fmt.Sprintf("Indentação removida em %d linhas (Esq).", linhasAlteradas), 1)
+			}
+			m.adjustCamera()
 
 		case tea.KeySpace:
 			if m.buf.HasSelection() {
@@ -443,7 +495,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.adjustCamera()
 
 		case tea.KeyRunes:
-			// ── CORREÇÃO DO ALTGR NO EDITOR PRINCIPAL ──
 			if msg.Alt {
 				if len(msg.Runes) == 1 && msg.Runes[0] == 'i' {
 					m.autoIndent = !m.autoIndent
@@ -470,7 +521,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.adjustCamera()
 					return m, nil
 				}
-				// Removido o 'return m, nil' que bloqueava o resto do teclado aqui!
 			}
 
 			cleanStr := strings.ReplaceAll(string(msg.Runes), "\x00", "")
