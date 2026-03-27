@@ -22,10 +22,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	m := app.New(buf)
+
 	// Inicia o programa usando a nossa casca (App) em vez do Editor direto
 	p := tea.NewProgram(
-		app.New(buf),
+		m,
 		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	)
 
 	if _, err := p.Run(); err != nil {
